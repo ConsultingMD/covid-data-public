@@ -22,8 +22,12 @@ class ValueAsStrMixin:
         return self.value
 
 
+class FieldName(str):
+    pass
+
+
 @enum.unique
-class CommonFields(GetByValueMixin, ValueAsStrMixin, str, enum.Enum):
+class CommonFields(GetByValueMixin, ValueAsStrMixin, FieldName, enum.Enum):
     """Common field names shared across different sources of data"""
 
     FIPS = "fips"
@@ -92,6 +96,12 @@ class CommonFields(GetByValueMixin, ValueAsStrMixin, str, enum.Enum):
     LATITUDE = "latitude"
     LONGITUDE = "longitude"
 
+    # Identifies the metric or variable name in Panda DataFrames with only one value ('long') or
+    # timeseries ('date wide') per row.
+    VARIABLE = "variable"
+    # Column containing the value in long DataFrames.
+    VALUE = "value"
+
 
 # CommonFields used as keys/index columns in timeseries DataFrames.
 # I'd like this to be immutable (for example a tuple) but pandas sometimes treats tuples and lists
@@ -113,7 +123,7 @@ COMMON_LEGACY_REGION_FIELDS = [
 COMMON_FIELDS_ORDER_MAP = {common: i for i, common in enumerate(CommonFields)}
 
 
-class FieldNameAndCommonField(str):
+class FieldNameAndCommonField(FieldName):
     """Represents the original field/column name and CommonField it maps to or None if dropped."""
 
     def __new__(cls, field_name: str, common_field: Optional[CommonFields]):

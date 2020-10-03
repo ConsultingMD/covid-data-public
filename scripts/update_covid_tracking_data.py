@@ -1,8 +1,10 @@
+import dataclasses
 import enum
 import json
 import logging
 import datetime
 import pathlib
+from typing import Optional
 
 import click
 import pytz
@@ -17,6 +19,7 @@ from covidactnow.datapublic.common_fields import CommonFields
 from covidactnow.datapublic.common_fields import FieldNameAndCommonField
 from covidactnow.datapublic.common_fields import GetByValueMixin
 from scripts import helpers
+from scripts import test_positivity
 
 DATA_ROOT = pathlib.Path(__file__).parent.parent / "data"
 COVID_TRACKING_ROOT = DATA_ROOT / "covid-tracking"
@@ -153,7 +156,42 @@ class Fields(GetByValueMixin, FieldNameAndCommonField, enum.Enum):
     POSITIVE_TESTS_PEOPLE_ANTIGEN = "positiveTestsPeopleAntigen", None
 
 
-def transform(df: pd.DataFrame) -> pd.DataFrame:
+TEST_POSITIVITY_METHODS = [
+    test_positivity.Method(
+        "method1", Fields.POSITIVE_CASES_VIRAL, Fields.TOTAL_TEST_ENCOUNTERS_VIRAL
+    ),
+    test_positivity.Method("method2", Fields.POSITIVE_TESTS_VIRAL, Fields.TOTAL_TESTS_VIRAL),
+    test_positivity.Method("method3", Fields.POSITIVE_CASES_VIRAL, Fields.TOTAL_TESTS_VIRAL),
+    test_positivity.Method("method4", Fields.POSITIVE_TESTS, Fields.TOTAL_TESTS_VIRAL),
+    test_positivity.Method("method5", Fields.POSITIVE_CASES_VIRAL, Fields.TOTAL_TESTS_PEOPLE_VIRAL),
+    test_positivity.Method("method6", Fields.POSITIVE_CASES_VIRAL, Fields.TOTAL_TEST_RESULTS),
+]
+
+
+@dataclasses.dataclass
+class RegionalDataset:
+    common_timeseries: pd.DataFrame
+    common_timeseries_provenance: Optional[pd.Series]
+
+    def __post_init__(self):
+        # Some integrity checks
+        # TODO(tom): Change to LOCATION_ID when migrated
+        assert CommonFields.FIPS in self.common_timeseries.columns
+        assert CommonFields.DATE in self.common_timeseries.columns
+        assert self.common_timeseries.index.is_unique
+        assert self.common_timeseries.index.is_monotonic_increasing
+        assert self.common_timeseries.index.names == [None]
+        if self.common_timeseries_provenance:
+            assert self.common_timeseries_provenance.index.names == [
+                CommonFields.LOCATION_ID,
+                CommonFields.VARIABLE,
+            ]
+
+    def write_csv(self, csv_path: pathlib.Path, log):
+        common_df.write_csv(self.common_timeseries, csv_path, log)
+
+
+def transform(df: pd.DataFrame, calculate_test_positivity: bool = False) -> RegionalDataset:
     """Transforms data from load_local_json to the common fields."""
     log = structlog.get_logger()
 
@@ -163,6 +201,12 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
     df.loc[is_ct & df.date.isin(dates_to_remove), ["negative", "positive"]] = np.nan
 
     df[CommonFields.DATE] = pd.to_datetime(df[Fields.DATE], format="%Y%m%d")
+
+    if calculate_test_positivity:
+        all_method = test_positivity.AllMethods.run(
+            df, TEST_POSITIVITY_METHODS, 7, 14, Fields.STATE
+        )
+        all_method.all_methods_timeseries.to_csv()
 
     # Removing bad data from Delaware.
     # Once that is resolved we can remove this while keeping the assert below.
@@ -195,25 +239,23 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
 
     df[CommonFields.AGGREGATE_LEVEL] = "state"
 
-    return df
+    return RegionalDataset(df, None)
 
 
 @click.command()
 @click.option("--replace-local-mirror/--no-replace-local-mirror", default=True)
-@click.option("--generate-common-csv/--no-generate-common-csv", default=True)
-def main(replace_local_mirror: bool, generate_common_csv: bool):
+@click.option("--calculate-test-positivity/--no-calculate-test-positivity", default=False)
+def main(replace_local_mirror: bool, calculate_test_positivity: bool):
     logging.basicConfig(level=logging.INFO)
     common_init.configure_logging()
 
     if replace_local_mirror:
         update_local_json()
 
-    CovidTrackingDataUpdater().update()
-
-    if generate_common_csv:
-        common_df.write_csv(
-            transform(load_local_json()), TIMESERIES_CSV_PATH, structlog.get_logger(),
-        )
+    regional_dataset = transform(
+        load_local_json(), calculate_test_positivity=calculate_test_positivity
+    )
+    regional_dataset.write_csv(TIMESERIES_CSV_PATH, structlog.get_logger())
 
 
 if __name__ == "__main__":
