@@ -1,4 +1,5 @@
 import dataclasses
+import pathlib
 from itertools import chain
 from typing import List
 
@@ -17,7 +18,8 @@ class Method:
 
     def calculate(self, delta_df: pd.DataFrame) -> pd.DataFrame:
         assert delta_df.columns.names == [CommonFields.DATE]
-        assert delta_df.index.names == ["variable", CommonFields.STATE]
+        # TODO(tom): Replace STATE with LOCATION_ID
+        assert delta_df.index.names == [CommonFields.VARIABLE, CommonFields.STATE]
         # delta_df has the field name as the first level of the index. delta_df.loc[field, :] returns a
         # DataFrame without the field label so operators such as `/` are calculated for each
         # region/state and date.
@@ -26,10 +28,13 @@ class Method:
 
 @dataclasses.dataclass
 class AllMethods:
-    """The result of calculating all methods for all regions"""
+    """The result of calculating all test positivity methods for all regions"""
 
+    # Test positivity calculated in all valid methods for each region
     all_methods_timeseries: pd.DataFrame
+    # Test positivity using the best available method for each region
     test_positivity: pd.DataFrame
+    # Test positivity method used in `test_positivity` for each region
     provenance: pd.Series
 
     @staticmethod
@@ -50,7 +55,7 @@ class AllMethods:
             df.loc[:, key_cols + ts_value_cols]
             .melt(id_vars=key_cols, value_vars=ts_value_cols)
             .dropna()
-            .set_index(["variable", region_field, date_field])["value"]
+            .set_index([CommonFields.VARIABLE, region_field, date_field])[CommonFields.VALUE]
             .apply(pd.to_numeric)
         )
         start_date = df[CommonFields.DATE].min()
@@ -70,9 +75,10 @@ class AllMethods:
 
         all_wide = (
             pd.concat(
-                {method.name: method.calculate(diff_df) for method in methods}, names=["variable"]
+                {method.name: method.calculate(diff_df) for method in methods},
+                names=[CommonFields.VARIABLE],
             )
-            .reorder_levels([region_field, "variable"])
+            .reorder_levels([region_field, CommonFields.VARIABLE])
             # Drop empty timeseries
             .dropna("index", "all")
             .sort_index()
@@ -84,11 +90,18 @@ class AllMethods:
 
         has_recent_data = all_wide.loc[:, recent_date_range].notna().any(axis=1)
         all_recent_data = all_wide.loc[has_recent_data, :].reset_index()
-        all_recent_data["variable"] = all_recent_data["variable"].astype(method_cat_type)
+        all_recent_data[CommonFields.VARIABLE] = all_recent_data[CommonFields.VARIABLE].astype(
+            method_cat_type
+        )
         first = all_recent_data.groupby(region_field).first()
-        provenance = first["variable"].astype(str).rename("provenance")
-        positivity = first.drop(columns=["variable"])
+        provenance = first[CommonFields.VARIABLE].astype(str).rename(CommonFields.PROVENANCE)
+        positivity = first.drop(columns=[CommonFields.VARIABLE])
 
         return AllMethods(
             all_methods_timeseries=all_wide, test_positivity=positivity, provenance=provenance
+        )
+
+    def write(self, csv_path: pathlib.Path):
+        self.all_methods_timeseries.to_csv(
+            csv_path, date_format="%Y-%m-%d", index=True, float_format="%.05g",
         )

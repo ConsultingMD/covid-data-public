@@ -33,9 +33,9 @@ def test_transform():
         set_index=False,
     )
     with structlog.testing.capture_logs() as logs:
-        out_df = update_covid_tracking_data.transform(
-            in_df, calculate_test_positivity=False
-        ).common_timeseries
+        out_df = update_covid_tracking_data.transform(in_df, calculate_test_positivity=False)[
+            0
+        ].common_timeseries
 
     expected_df = common_df.read_csv(
         StringIO(
@@ -63,9 +63,9 @@ def test_transform_icu_greater_than_hospitalized():
         set_index=False,
     )
     with structlog.testing.capture_logs() as logs:
-        out_df = update_covid_tracking_data.transform(
-            in_df, calculate_test_positivity=False
-        ).common_timeseries
+        out_df = update_covid_tracking_data.transform(in_df, calculate_test_positivity=False)[
+            0
+        ].common_timeseries
 
     expected_df = common_df.read_csv(
         StringIO(
@@ -87,7 +87,14 @@ def test_transform_icu_greater_than_hospitalized():
 def test_calculate_all_test_positivity():
     in_df = update_covid_tracking_data.load_local_json()
     with structlog.testing.capture_logs() as logs:
-        out_df = update_covid_tracking_data.transform(in_df, calculate_test_positivity=True)
+        regional_data, all_test_positivity_methods = update_covid_tracking_data.transform(
+            in_df, calculate_test_positivity=True
+        )
+    assert not regional_data.common_timeseries.empty
+    # Make sure there is at least one real value in the timeseries
+    assert (
+        all_test_positivity_methods.all_methods_timeseries.loc[("TX", "method6"), :].notna().any()
+    )
 
 
 def parse_wide_dates(csv_str: str) -> pd.DataFrame:

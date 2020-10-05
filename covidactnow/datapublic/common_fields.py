@@ -23,6 +23,8 @@ class ValueAsStrMixin:
 
 
 class FieldName(str):
+    """Common base-class for enums of fields, CSV column names etc"""
+
     pass
 
 
@@ -101,6 +103,8 @@ class CommonFields(GetByValueMixin, ValueAsStrMixin, FieldName, enum.Enum):
     VARIABLE = "variable"
     # Column containing the value in long DataFrames.
     VALUE = "value"
+
+    PROVENANCE = "provenance"
 
 
 # CommonFields used as keys/index columns in timeseries DataFrames.

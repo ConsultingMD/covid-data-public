@@ -5,6 +5,7 @@ import logging
 import datetime
 import pathlib
 from typing import Optional
+from typing import Tuple
 
 import click
 import pytz
@@ -25,6 +26,7 @@ DATA_ROOT = pathlib.Path(__file__).parent.parent / "data"
 COVID_TRACKING_ROOT = DATA_ROOT / "covid-tracking"
 LOCAL_JSON_PATH = COVID_TRACKING_ROOT / "states.json"
 TIMESERIES_CSV_PATH = COVID_TRACKING_ROOT / "timeseries.csv"
+TEST_POSITIVITY_FILENAME = "test-positivity-all-methods-wide-dates.csv"
 HISTORICAL_STATE_DATA_URL = "http://covidtracking.com/api/states/daily"
 
 ICU_HOSPITALIZED_MISMATCH_WARNING_MESSAGE = (
@@ -154,6 +156,7 @@ class Fields(GetByValueMixin, FieldNameAndCommonField, enum.Enum):
     GRADE = "grade", None
     POSITIVE_SCORE = "positiveScore", None
     POSITIVE_TESTS_PEOPLE_ANTIGEN = "positiveTestsPeopleAntigen", None
+    PROBABLE_CASES = "probableCases", None
 
 
 TEST_POSITIVITY_METHODS = [
@@ -170,6 +173,12 @@ TEST_POSITIVITY_METHODS = [
 
 @dataclasses.dataclass
 class RegionalDataset:
+    """Represents a set of timeseries and provenance information.
+
+    This is similar to MultiRegionTimeseriesDataset in covid-data-model but without the legacy of
+    TimeseriesDataset and LatestValuesDataset. Eventually the classes may be merged into one.
+    """
+
     common_timeseries: pd.DataFrame
     common_timeseries_provenance: Optional[pd.Series]
 
@@ -181,6 +190,7 @@ class RegionalDataset:
         assert self.common_timeseries.index.is_unique
         assert self.common_timeseries.index.is_monotonic_increasing
         assert self.common_timeseries.index.names == [None]
+
         if self.common_timeseries_provenance:
             assert self.common_timeseries_provenance.index.names == [
                 CommonFields.LOCATION_ID,
@@ -191,7 +201,9 @@ class RegionalDataset:
         common_df.write_csv(self.common_timeseries, csv_path, log)
 
 
-def transform(df: pd.DataFrame, calculate_test_positivity: bool = False) -> RegionalDataset:
+def transform(
+    df: pd.DataFrame, calculate_test_positivity: bool = False
+) -> Tuple[RegionalDataset, Optional[test_positivity.AllMethods]]:
     """Transforms data from load_local_json to the common fields."""
     log = structlog.get_logger()
 
@@ -207,6 +219,9 @@ def transform(df: pd.DataFrame, calculate_test_positivity: bool = False) -> Regi
             df, TEST_POSITIVITY_METHODS, 7, 14, Fields.STATE
         )
         all_method.all_methods_timeseries.to_csv()
+        # TODO(tom): Add test positivty to df and provenance.
+    else:
+        all_method = None
 
     # Removing bad data from Delaware.
     # Once that is resolved we can remove this while keeping the assert below.
@@ -239,7 +254,7 @@ def transform(df: pd.DataFrame, calculate_test_positivity: bool = False) -> Regi
 
     df[CommonFields.AGGREGATE_LEVEL] = "state"
 
-    return RegionalDataset(df, None)
+    return RegionalDataset(df, None), all_method
 
 
 @click.command()
@@ -252,10 +267,12 @@ def main(replace_local_mirror: bool, calculate_test_positivity: bool):
     if replace_local_mirror:
         update_local_json()
 
-    regional_dataset = transform(
+    regional_dataset, test_positivity = transform(
         load_local_json(), calculate_test_positivity=calculate_test_positivity
     )
     regional_dataset.write_csv(TIMESERIES_CSV_PATH, structlog.get_logger())
+    if test_positivity:
+        test_positivity.write(TIMESERIES_CSV_PATH.with_name(TEST_POSITIVITY_FILENAME))
 
 
 if __name__ == "__main__":
