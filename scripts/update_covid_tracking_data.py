@@ -259,7 +259,7 @@ def transform(
 
 @click.command()
 @click.option("--replace-local-mirror/--no-replace-local-mirror", default=True)
-@click.option("--calculate-test-positivity/--no-calculate-test-positivity", default=False)
+@click.option("--calculate-test-positivity/--no-calculate-test-positivity", default=True)
 def main(replace_local_mirror: bool, calculate_test_positivity: bool):
     logging.basicConfig(level=logging.INFO)
     common_init.configure_logging()
