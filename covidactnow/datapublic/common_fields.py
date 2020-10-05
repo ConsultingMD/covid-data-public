@@ -98,10 +98,10 @@ class CommonFields(GetByValueMixin, ValueAsStrMixin, FieldName, enum.Enum):
     LATITUDE = "latitude"
     LONGITUDE = "longitude"
 
-    # Identifies the metric or variable name in Panda DataFrames with only one value ('long') or
-    # timeseries ('date wide') per row.
+    # Identifies the metric or variable name in Panda DataFrames with only one value ('long' layout) or
+    # timeseries ('date wide' layout) per row.
     VARIABLE = "variable"
-    # Column containing the value in long DataFrames.
+    # Column containing the value in 'long' format DataFrames.
     VALUE = "value"
 
     PROVENANCE = "provenance"

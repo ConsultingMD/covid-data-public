@@ -215,13 +215,13 @@ def transform(
     df[CommonFields.DATE] = pd.to_datetime(df[Fields.DATE], format="%Y%m%d")
 
     if calculate_test_positivity:
-        all_method = test_positivity.AllMethods.run(
+        all_methods = test_positivity.AllMethods.run(
             df, TEST_POSITIVITY_METHODS, 7, 14, Fields.STATE
         )
-        all_method.all_methods_timeseries.to_csv()
-        # TODO(tom): Add test positivty to df and provenance.
+        all_methods.all_methods_timeseries.to_csv()
+        # TODO(tom): Add test positivity to df and provenance.
     else:
-        all_method = None
+        all_methods = None
 
     # Removing bad data from Delaware.
     # Once that is resolved we can remove this while keeping the assert below.
@@ -254,7 +254,7 @@ def transform(
 
     df[CommonFields.AGGREGATE_LEVEL] = "state"
 
-    return RegionalDataset(df, None), all_method
+    return RegionalDataset(df, None), all_methods
 
 
 @click.command()
